@@ -1,7 +1,7 @@
 name: World Cup Odds Monitor
 
-# 世界杯比分赔率云端监控
-# 每 10 分钟自动: 抓取赔率 → 刷新情报 → 分析趋势 → 生成报告 → 发布网页
+# 世界杯比分赔率云端监控 - 每10分钟自动运行
+# 电脑关机后依然持续: 抓取赔率 → 刷新情报 → 分析 → 发布
 
 on:
   schedule:
@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: odds-monitor
@@ -19,6 +21,10 @@ jobs:
   monitor:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: 检出代码
@@ -54,12 +60,14 @@ jobs:
             echo "数据已提交并推送"
           fi
 
-      - name: 发布到 GitHub Pages
-        if: success()
-        uses: peaceiris/actions-gh-pages@v3
+      - name: 配置 Pages
+        uses: actions/configure-pages@v4
+
+      - name: 上传产物
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./output
-          publish_branch: gh-pages
-          force_orphan: true
-          commit_message: "自动发布网页 [skip ci]"
+          path: ./output
+
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4
