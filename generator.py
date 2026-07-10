@@ -14,6 +14,14 @@ def escape_attr(s):
     """转义 HTML 属性中的特殊字符"""
     return s.replace("&", "&amp;").replace('"', "&quot;").replace("'", "&#39;").replace("<", "&lt;").replace(">", "&gt;")
 
+
+def _safe_float(v):
+    """安全转换为 float，失败返回 0"""
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return 0.0
+
 # 比分矩阵结构: {主队进球: {客队进球: 比分标签}}
 # 用于生成矩阵表头
 HOME_GOALS = [0, 1, 2, 3, 4, 5]
@@ -72,9 +80,29 @@ def build_score_cell(score, changes, show_gold=False):
     # 色块基于开盘→当前总趋势 (不影响文字箭头)
     total_bg = "total-bg-" + total_dir
 
-    html = f'<td class="score-cell {css} {total_bg}">'
+    # 开盘→当前总趋势图标（直接嵌入赔率显示）
+    total_icon = ""
+    if history_trail and len(history_trail) >= 2:
+        if total_dir == "up":
+            total_icon = "▲"
+        elif total_dir == "down":
+            total_icon = "▼"
+
+    # 单元格可点击：任意位置点击打开完整赔率轨迹弹窗
+    trail_attrs = ""
+    if history_trail and len(history_trail) >= 2:
+        trail_values = "|".join(history_trail)
+        trail_attrs = (
+            f' onclick="showTrail(event, this)"'
+            f' data-trail-values="{escape_attr(trail_values)}"'
+            f' data-score="{escape_attr(score)}"'
+            f' data-opening="{escape_attr(history_trail[0])}"'
+            f' title="点击查看比分 {score} 完整赔率轨迹"'
+        )
+
+    html = f'<td class="score-cell {css} {total_bg}"{trail_attrs}>'
     gold = '<i class="gold-ball"></i>' if show_gold else ''
-    html += f'<span class="val">{gold}{current}{arrow}</span>'
+    html += f'<span class="val">{gold}{current}{arrow}{total_icon}</span>'
 
     # 显示上次赔率
     if direction == "new":
@@ -91,28 +119,16 @@ def build_score_cell(score, changes, show_gold=False):
             sign = "+" if change_val > 0 else ""
             html += f'<span class="delta">{sign}{change_val}</span>'
 
-    # 显示完整历史轨迹（点击展开弹窗）
+    # 显示开盘赔率参考（不可点击，点击已移至整个 <td>）
     if history_trail and len(history_trail) >= 2:
-        # 开盘到当前总变化趋势
-        total_icon = ""
         total_cls = "total-flat"
         if total_dir == "up":
-            total_icon = "▲"
             total_cls = "total-up"
         elif total_dir == "down":
-            total_icon = "▼"
             total_cls = "total-down"
-
-        # 存储完整轨迹（管道分隔），JS 端构建方向图标
-        trail_values = "|".join(history_trail)
         html += (
-            f'<span class="history-trail history-clickable {total_cls}" '
-            f'onclick="showTrail(event, this)" '
-            f'data-trail-values="{escape_attr(trail_values)}" '
-            f'data-score="{escape_attr(score)}" '
-            f'data-opening="{escape_attr(history_trail[0])}" '
-            f'title="点击查看完整赔率轨迹">'
-            f'开{history_trail[0]}{total_icon}'
+            f'<span class="history-trail {total_cls}">'
+            f'开{history_trail[0]}'
             f'</span>'
         )
 
@@ -302,12 +318,48 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
         summary = r.get("trend_summary", {})
         match_key = f"{r.get('home_team','')} vs {r.get('away_team','')}"
         intel = match_intel.get(match_key, {})
+
+        # 计算海外盘口参考：从赔率分布推导市场隐含概率
+        home_win_prob = 0.0
+        away_win_prob = 0.0
+        draw_prob = 0.0
+        overround = 0.0
+        if scores:
+            try:
+                total_inv = 0.0
+                prob_map = {}
+                for s, v in scores.items():
+                    inv = 1.0 / float(v)
+                    total_inv += inv
+                    prob_map[s] = inv
+                overround = total_inv  # >1 有抽水
+                for s, inv in prob_map.items():
+                    norm = inv / total_inv * 100
+                    parts = s.split(":")
+                    if len(parts) == 2:
+                        h, a = int(parts[0]), int(parts[1])
+                        if h > a:
+                            home_win_prob += norm
+                        elif a > h:
+                            away_win_prob += norm
+                        else:
+                            draw_prob += norm
+                    elif "胜" in s:
+                        home_win_prob += norm
+                    elif "负" in s:
+                        away_win_prob += norm
+                    elif "平" in s:
+                        draw_prob += norm
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass
+
         top5 = []
         if scores:
             try:
                 sorted_s = sorted(scores.items(), key=lambda x: float(x[1]))
                 for s, v in sorted_s[:5]:
                     chg = changes.get(s, {})
+                    trail = chg.get("history_trail", [])
                     top5.append({
                         "score": s,
                         "odds": v,
@@ -315,9 +367,16 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                         "direction": chg.get("direction", "flat"),
                         "change": chg.get("change"),
                         "total_dir": chg.get("total_direction", "flat"),
+                        "opening": chg.get("opening", ""),
+                        "trail_len": len(trail),
+                        "trail_ups": sum(1 for k in range(1, len(trail))
+                                         if _safe_float(trail[k]) > _safe_float(trail[k-1])),
+                        "trail_downs": sum(1 for k in range(1, len(trail))
+                                           if _safe_float(trail[k]) < _safe_float(trail[k-1])),
                     })
             except (ValueError, TypeError):
                 pass
+
         prediction_data.append({
             "match": match_key,
             "home": r.get("home_team", ""),
@@ -335,6 +394,12 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                 "new": summary.get("new", 0),
             },
             "total_scores": len(scores),
+            "market": {
+                "home_win_prob": round(home_win_prob, 1),
+                "away_win_prob": round(away_win_prob, 1),
+                "draw_prob": round(draw_prob, 1),
+                "overround": round(overround, 3),
+            },
             "intel": {
                 "updated_at": intel.get("intel_updated_at", intel_meta.get("last_updated", "")),
                 "stage": intel.get("stage", ""),
@@ -860,6 +925,38 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
             border-color: #f9a825;
             background: #fffde7;
         }}
+        .predict-card .top5-trail {{
+            font-size: 9px;
+            color: #888;
+            margin-left: 2px;
+        }}
+        .top5-trail {{
+            font-size: 10px;
+            font-weight: 400;
+        }}
+        .market-overview {{
+            margin-top: 8px;
+            padding: 6px 10px;
+            background: #e3f2fd;
+            border-radius: 6px;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }}
+        .market-label {{
+            color: #1565c0;
+            font-weight: 700;
+        }}
+        .market-val {{
+            font-weight: 600;
+        }}
+        .market-val.market-home {{ color: #c62828; }}
+        .market-val.market-draw {{ color: #888; }}
+        .market-val.market-away {{ color: #2e7d32; }}
+        .predict-card.has-intel {{ border-left: 3px solid #1565c0; }}
+        .predict-card.no-intel {{ border-left: 3px solid #e0e0e0; }}
         .predict-deadline {{
             margin-top: 6px;
             padding: 6px 10px;
@@ -1214,6 +1311,14 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
             position: relative;
             cursor: default;
             vertical-align: middle;
+            transition: box-shadow 0.15s;
+        }}
+        .score-cell[data-trail-values] {{
+            cursor: pointer;
+        }}
+        .score-cell[data-trail-values]:hover {{
+            box-shadow: inset 0 0 0 2px #0d47a1;
+            z-index: 2;
         }}
         .score-cell .val {{
             font-weight: bold;
@@ -1275,18 +1380,6 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
             color: #777;
             margin-top: 2px;
             font-weight: 600;
-        }}
-        .score-cell .history-clickable {{
-            cursor: pointer;
-            text-decoration: underline;
-            text-decoration-style: dotted;
-            text-underline-offset: 3px;
-            transition: all 0.15s;
-        }}
-        .score-cell .history-clickable:hover {{
-            outline: 2px solid #0d47a1;
-            outline-offset: 1px;
-            border-radius: 3px;
         }}
         /* 开盘→当前总趋势颜色 */
         .score-cell .history-trail.total-up {{
@@ -1506,133 +1599,214 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
     var PREDICT_DATA = JSON.parse(document.getElementById('predictData').textContent);
     var countdownTimer = null;
 
-    // ========== 多维度综合评分引擎 ==========
+    // ========== 多维度综合评分引擎（7维）==========
     function predictScore(match) {{
         var top5 = match.top5;
         if (!top5.length) return null;
 
         var best = top5[0];
         var intel = match.intel || {{}};
+        var market = match.market || {{}};
         var hasIntel = !!(intel.team_form_home || intel.players_home || intel.news);
+        var trends = match.trends;
+        var highTemp = false;
+        var extreme = false;
 
-        // 维度1: 赔率趋势分析 (权重25%)
-        var upCount = match.trends.up;
-        var downCount = match.trends.down;
+        // ---- 维度1: 赔率趋势与市场信号 (20分) ----
+        var upCount = trends.up || 0;
+        var downCount = trends.down || 0;
         var total = upCount + downCount;
         var marketSignal = total > 0 ? ((downCount - upCount) / total) : 0;
-        var oddsScore = 12.5 + marketSignal * 12.5;
-        oddsScore = Math.max(2, Math.min(25, oddsScore));
+        // 综合TOP5各自的升降轨迹
+        var top5TrendBonus = 0;
+        for (var t = 0; t < top5.length; t++) {{
+            var td = top5[t].total_dir || "flat";
+            var tu = top5[t].trail_ups || 0;
+            var td2 = top5[t].trail_downs || 0;
+            if (td === "down" && td2 >= 2) top5TrendBonus += 1.0;
+            else if (td === "down") top5TrendBonus += 0.5;
+            else if (td === "up" && tu >= 2) top5TrendBonus -= 0.8;
+            else if (td === "up") top5TrendBonus -= 0.3;
+        }}
+        var oddsScore = 10 + marketSignal * 8 + top5TrendBonus;
+        oddsScore = Math.max(2, Math.min(20, oddsScore));
 
-        // 维度2: 球队近况 (权重25%)
-        var formScore = 12.5;
+        // ---- 维度2: 球队近况与实力 (20分) ----
+        var formScore = 10;
         var formHome = (intel.team_form_home || '').toLowerCase();
         var formAway = (intel.team_form_away || '').toLowerCase();
         if (hasIntel) {{
-            var homeStrong = /零封|全胜|固若金汤|逆转|绝杀|卫冕|顶级/.test(formHome);
-            var homeWeak = /回落|低迷|差距/.test(formHome);
-            var awayStrong = /大胜|爆冷/.test(formAway) && !/回落/.test(formAway);
-            var awayWeak = /回落|低迷|差距|报销|缺阵/.test(formAway);
-            if (homeStrong && awayWeak) formScore = 22;
-            else if (homeStrong && !awayStrong) formScore = 18;
-            else if (homeStrong && awayStrong) formScore = 14;
-            else if (!homeStrong && awayWeak) formScore = 15;
-            else if (awayStrong && (homeWeak || !homeStrong)) formScore = 8;
-            else if (homeWeak) formScore = 6;
+            var homeStrong = /零封|全胜|固若金汤|逆转|绝杀|卫冕|顶级|压制|连胜/.test(formHome);
+            var homeWeak = /回落|低迷|差距|连败|溃败|崩盘/.test(formHome);
+            var awayStrong = /大胜|爆冷|连胜|压制/.test(formAway) && !/回落/.test(formAway);
+            var awayWeak = /回落|低迷|差距|报销|缺阵|连败|溃败/.test(formAway);
+            if (homeStrong && awayWeak) formScore = 18;
+            else if (homeStrong && !awayStrong) formScore = 16;
+            else if (homeStrong && awayStrong) formScore = 12;
+            else if (!homeStrong && awayWeak) formScore = 13;
+            else if (awayStrong && (homeWeak || !homeStrong)) formScore = 7;
+            else if (homeWeak) formScore = 5;
+            else if (awayWeak) formScore = 14;
+            else formScore = 10;
         }}
 
-        // 维度3: 球员状态/伤病 (权重25%)
-        var playerScore = 12.5;
+        // ---- 维度3: 球员状态与伤病 (20分) ----
+        var playerScore = 10;
         var playersHome = (intel.players_home || '').toLowerCase();
         var playersAway = (intel.players_away || '').toLowerCase();
         if (hasIntel) {{
-            var homeMajorInjury = /报销|缺阵|受伤|出战成疑/.test(playersHome);
-            var homeNoInjury = /无重大|完整/.test(playersHome);
-            var awayMajorInjury = /报销|十字韧带|缺阵|退出赛事/.test(playersAway);
-            var awayNoInjury = /无重大|完整/.test(playersAway);
-            if (homeNoInjury && awayMajorInjury) playerScore = 22;
-            else if (!homeMajorInjury && awayMajorInjury) playerScore = 19;
-            else if (homeNoInjury && !awayMajorInjury) playerScore = 16;
-            else if (homeMajorInjury && awayMajorInjury) playerScore = 10;
-            else if (homeMajorInjury) playerScore = 7;
-            else playerScore = 14;
+            var homeMajorInjury = /报销|缺阵|十字韧带|赛季报销/.test(playersHome);
+            var homeMinorInjury = /受伤|出战成疑|轻伤|恢复中/.test(playersHome);
+            var homeNoInjury = /无重大|完整|全员|齐整/.test(playersHome);
+            var awayMajorInjury = /报销|缺阵|十字韧带|赛季报销|退出赛事/.test(playersAway);
+            var awayMinorInjury = /受伤|出战成疑|轻伤|恢复中/.test(playersAway);
+            var awayNoInjury = /无重大|完整|全员|齐整/.test(playersAway);
+            if (homeNoInjury && awayMajorInjury) playerScore = 18;
+            else if (!homeMajorInjury && awayMajorInjury) playerScore = 16;
+            else if (homeNoInjury && awayMinorInjury) playerScore = 15;
+            else if (homeNoInjury && !awayMajorInjury) playerScore = 14;
+            else if (homeMajorInjury && awayMajorInjury) playerScore = 8;
+            else if (homeMajorInjury && !awayMajorInjury) playerScore = 7;
+            else if (homeMajorInjury && awayNoInjury) playerScore = 6;
+            else if (awayMajorInjury) playerScore = 13;
+            else if (homeMinorInjury && !awayMinorInjury) playerScore = 12;
+            else playerScore = 11;
         }}
 
-        // 维度4: 消息面/历史交锋 (权重15%)
+        // ---- 维度4: 海内外消息面 (15分) ----
         var newsScore = 7.5;
         var news = (intel.news || '').toLowerCase();
         var h2h = (intel.history_head2head || '').toLowerCase();
+        var prediction = (intel.prediction || '').toLowerCase();
         if (hasIntel && (news || h2h)) {{
-            var homeAdv = /占优|全胜|不败/.test(h2h) || /克制|拿不到球/.test(news);
-            var awayAdv = /劣势/.test(h2h);
-            if (homeAdv) newsScore = 13;
-            else if (awayAdv) newsScore = 4;
-            else newsScore = 8;
+            var homeAdv = /占优|全胜|不败|克制|拿不到球|压制/.test(h2h)
+                       || /利好|稳操胜券|看好主队|主场龙/.test(news)
+                       || /主胜|主队|稳胆/.test(prediction);
+            var awayAdv = /劣势|被压制|客场虫/.test(h2h)
+                       || /爆冷|黑马|客胜/.test(news)
+                       || /客队|客胜/.test(prediction);
+            var mixed = /五五开|势均力敌|难分/.test(news + h2h);
+            if (homeAdv && !awayAdv) newsScore = 13;
+            else if (awayAdv && !homeAdv) newsScore = 4;
+            else if (mixed) newsScore = 8;
+            else if (homeAdv && awayAdv) newsScore = 8;
+            else newsScore = 7.5;
         }}
 
-        // 维度5: 场地/天气/裁判 (权重10%)
+        // ---- 维度5: 裁判组 (5分) ----
+        var refereeScore = 2.5;
+        var referee = (intel.referee || '').toLowerCase();
+        if (hasIntel && referee && referee !== '待公布') {{
+            // 裁判严格度影响比赛节奏
+            var strictRef = /严格|出牌多|争议|var/.test(referee);
+            var fairRef = /公正|经验丰富|顶级|国际级/.test(referee);
+            if (strictRef) refereeScore = 1.5;  // 严格裁判增加不确定性
+            else if (fairRef) refereeScore = 4;  // 公正裁判有利于实力方
+            else refereeScore = 3;
+        }}
+
+        // ---- 维度6: 场地/天气/时间 (10分) ----
         var condScore = 5;
         var venue = (intel.venue || '').toLowerCase();
         var weather = (intel.weather || '').toLowerCase();
-        var highHumidity = false;
+        var matchTime = (intel.match_time || match.time || '').toLowerCase();
         if (hasIntel && (venue || weather)) {{
-            highHumidity = /湿度/.test(weather) && /[789]\\d%/.test(weather);
-            var neutral = /洛杉矶|迈阿密|堪萨斯/.test(venue);
-            if (neutral && !highHumidity) condScore = 6;
-            else if (highHumidity) condScore = 3;
+            highTemp = /高温|[3-9][0-9]℃|湿度|[789]\\d%/.test(weather);
+            extreme = /暴雨|大风|暴雪/.test(weather);
+            var neutral = /洛杉矶|迈阿密|堪萨斯|多伦多|温哥华/.test(venue);
+            // 比赛时间：晚场比赛通常更有利于主队
+            var evening = /2[0-2]:|1[89]:/.test(matchTime);
+            if (neutral && !highTemp && !extreme) condScore = 6;
+            else if (highTemp) condScore = 3;
+            else if (extreme) condScore = 2;
+            else if (evening) condScore = 6;
             else condScore = 5;
         }}
 
-        // 综合评分
-        var totalScore = oddsScore + formScore + playerScore + newsScore + condScore;
+        // ---- 维度7: 海外盘口对比 (10分) ----
+        var marketScore = 5;
+        if (market.home_win_prob !== undefined) {{
+            var homeP = market.home_win_prob || 0;
+            var awayP = market.away_win_prob || 0;
+            var drawP = market.draw_prob || 0;
+            var ovr = market.overround || 1;
+            // 抽水率健康度
+            var juice = ovr > 0 ? (ovr - 1) * 100 : 0;
+            // 主胜概率明显高于客胜 → 市场看好主队
+            if (homeP > awayP + 25) marketScore = 9;
+            else if (homeP > awayP + 15) marketScore = 7.5;
+            else if (homeP > awayP + 8) marketScore = 6;
+            else if (Math.abs(homeP - awayP) < 5) marketScore = 5;  // 势均力敌
+            else if (awayP > homeP + 15) marketScore = 2.5;
+            else if (awayP > homeP + 8) marketScore = 3.5;
+            else marketScore = 4;
+            // 抽水率偏高惩罚
+            if (juice > 15) marketScore -= 0.5;
+        }}
+
+        // ---- 综合评分 ----
+        var totalScore = oddsScore + formScore + playerScore + newsScore + refereeScore + condScore + marketScore;
 
         // 信心度映射
         var confidence, confLabel;
-        if (totalScore >= 72) {{ confidence = "高"; confLabel = "多方信号共振，信心度高"; }}
+        if (totalScore >= 72) {{ confidence = "高"; confLabel = "七维信号共振，信心度高"; }}
         else if (totalScore >= 55) {{ confidence = "中高"; confLabel = "多数维度支持，可参考"; }}
         else if (totalScore >= 40) {{ confidence = "中"; confLabel = "部分维度有分歧，需谨慎"; }}
         else if (totalScore >= 25) {{ confidence = "低"; confLabel = "多维度交叉矛盾，不确定性大"; }}
         else {{ confidence = "极低"; confLabel = "建议观望，等待更多信息"; }}
 
-        // 推理说明
+        // 推理说明（多维度）
         var reasons = [];
         if (hasIntel) {{
-            if (formScore >= 18) reasons.push("主队近况占优");
-            else if (formScore <= 8) reasons.push("客队近况更佳");
-            if (playerScore >= 18) reasons.push("主队阵容完整，客队有关键球员缺阵");
-            else if (playerScore <= 8) reasons.push("主队存在伤病隐患");
-            if (newsScore >= 12) reasons.push("历史交锋和消息面支持主队");
-            if (marketSignal > 0.2) reasons.push("赔率趋势积极(机构看好)");
+            if (formScore >= 16) reasons.push("主队近况明显占优");
+            else if (formScore <= 7) reasons.push("客队近况更佳");
+            if (playerScore >= 16) reasons.push("主队阵容齐整，客队有伤病隐患");
+            else if (playerScore <= 7) reasons.push("主队存在伤病问题");
+            if (newsScore >= 12) reasons.push("消息面/历史交锋支持主队");
+            else if (newsScore <= 5) reasons.push("消息面更有利于客队");
+            if (marketSignal > 0.2) reasons.push("赔率趋势积极（机构看好）");
             else if (marketSignal > 0) reasons.push("赔率趋势偏积极");
             else if (marketSignal < -0.15) reasons.push("赔率趋势偏消极");
-            if (highHumidity) reasons.push("高温高湿增加比赛不确定性");
+            if (marketScore >= 7.5) reasons.push("盘口概率分布明确倾向主队");
+            else if (marketScore <= 3) reasons.push("盘口概率分布偏向客队");
+            if (highTemp) reasons.push("高温高湿增加不确定性");
+            if (extreme) reasons.push("极端天气大幅影响比赛");
+            if (refereeScore <= 2) reasons.push("裁判风格偏严格，需注意纪律");
         }} else {{
-            if (marketSignal > 0.2) reasons.push("赔率趋势积极(无多维情报辅助)");
-            else reasons.push("赔率趋势参考(无多维情报辅助)");
+            if (marketSignal > 0.2) reasons.push("赔率趋势积极（无多维情报辅助）");
+            else reasons.push("赔率趋势参考（无多维情报辅助）");
         }}
-        var reason = reasons.join("；") || "无显著信号";
+        var reason = reasons.join("；") || "等待更多信息";
 
         // TOP1 比分自身趋势
         var totalDir = best.total_dir || "flat";
-        if (totalDir === "down") {{
-            reason += "。该比分从开盘至今持续下降，热度上升";
+        var trailUps = best.trail_ups || 0;
+        var trailDowns = best.trail_downs || 0;
+        if (totalDir === "down" && trailDowns >= 2) {{
+            reason += "。「" + best.score + "」赔率从开盘持续下降" + trailDowns + "次，机构信心增强";
             if (confidence === "低") confidence = "中";
+        }} else if (totalDir === "down") {{
+            reason += "。该比分赔率下降，热度小幅上升";
         }} else if (totalDir === "up") {{
-            reason += "。该比分从开盘至今持续上升，热度减退";
+            reason += "。该比分赔率上升，热度减退";
             if (confidence === "高") confidence = "中高";
         }}
 
         var scoringDetail = [];
-        scoringDetail.push({{label: "赔率趋势", score: oddsScore, max: 25}});
-        scoringDetail.push({{label: "球队近况", score: formScore, max: 25}});
-        scoringDetail.push({{label: "球员状态", score: playerScore, max: 25}});
+        scoringDetail.push({{label: "赔率趋势", score: oddsScore, max: 20}});
+        scoringDetail.push({{label: "球队近况", score: formScore, max: 20}});
+        scoringDetail.push({{label: "球员状态", score: playerScore, max: 20}});
         scoringDetail.push({{label: "消息面", score: newsScore, max: 15}});
-        scoringDetail.push({{label: "场地条件", score: condScore, max: 10}});
+        scoringDetail.push({{label: "裁判组", score: refereeScore, max: 5}});
+        scoringDetail.push({{label: "场地时间", score: condScore, max: 10}});
+        scoringDetail.push({{label: "海外盘口", score: marketScore, max: 10}});
 
         return {{
             best: best, top5: top5, reason: reason, confLabel: confLabel,
             confidence: confidence, totalScore: totalScore, maxScore: 100,
             scoringDetail: scoringDetail, marketSignal: marketSignal,
-            upCount: upCount, downCount: downCount, hasIntel: hasIntel
+            upCount: upCount, downCount: downCount, hasIntel: hasIntel,
+            marketInfo: market, referee: intel.referee || ''
         }};
     }}
 
@@ -1712,9 +1886,36 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
             var top5mini = '';
             if (p && p.top5.length) {{
                 for (var j = 0; j < p.top5.length; j++) {{
+                    var t5 = p.top5[j];
                     var cls = (j === 0) ? 'top5-mini-item gold' : 'top5-mini-item';
-                    top5mini += '<span class="' + cls + '">' + p.top5[j].score + ' @' + p.top5[j].odds + '</span>';
+                    // 每个TOP5比分显示自身趋势
+                    var t5dir = t5.total_dir || 'flat';
+                    var t5icon = '';
+                    if (t5dir === 'down') t5icon = ' ▼';
+                    else if (t5dir === 'up') t5icon = ' ▲';
+                    var t5trail = '';
+                    if (t5.trail_downs > 0 || t5.trail_ups > 0) {{
+                        t5trail = ' <span class="top5-trail">(';
+                        if (t5.trail_downs > 0) t5trail += '▼' + t5.trail_downs;
+                        if (t5.trail_ups > 0) t5trail += '▲' + t5.trail_ups;
+                        t5trail += ')</span>';
+                    }}
+                    top5mini += '<span class="' + cls + '">' + t5.score + ' @' + t5.odds + t5icon + t5trail + '</span>';
                 }}
+            }}
+
+            // 大盘/海外盘口概览
+            var marketOverview = '';
+            if (p && p.marketInfo && p.marketInfo.home_win_prob !== undefined) {{
+                var hwp = p.marketInfo.home_win_prob || 0;
+                var awp = p.marketInfo.away_win_prob || 0;
+                var drp = p.marketInfo.draw_prob || 0;
+                marketOverview = '<div class="market-overview">'
+                    + '<span class="market-label">📊 盘口概率:</span>'
+                    + '<span class="market-val market-home">主胜 ' + hwp.toFixed(1) + '%</span>'
+                    + '<span class="market-val market-draw">平局 ' + drp.toFixed(1) + '%</span>'
+                    + '<span class="market-val market-away">客胜 ' + awp.toFixed(1) + '%</span>'
+                    + '</div>';
             }}
 
             // 投注截止倒计时（每张卡独立计算）
@@ -1822,7 +2023,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
 
             // 卡片渲染
             if (p) {{
-                html += '<div class="predict-card">'
+                html += '<div class="predict-card ' + (p.hasIntel ? 'has-intel' : 'no-intel') + '">'
                     + '<div class="predict-card-header">'
                     + '<span class="predict-card-match">' + m.match + '</span>'
                     + '<span class="predict-card-time">' + dateTime + '</span>'
@@ -1832,6 +2033,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                     + '<div class="predict-reason"><strong>评分: ' + Math.round(p.totalScore) + '/100 (' + p.confidence + ')</strong> | ' + p.reason + '</div>'
                     + scoringHtml
                     + '<div class="predict-trend-tags">' + trendTags + '</div>'
+                    + marketOverview
                     + '<div class="top5-mini">' + top5mini + '</div>'
                     + deadlineHtml
                     + intelHtml
