@@ -2099,7 +2099,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
     // 页面加载：渲染预测 + 启动定时器
     renderPredictions();
     startTimers();
-    </script>
+
     function showTrail(event, el) {{
         event.stopPropagation();
         var overlay = document.getElementById('trailOverlay');
