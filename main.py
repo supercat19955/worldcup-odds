@@ -18,7 +18,7 @@ from analyzer import save_snapshot, load_best_previous_snapshot, load_all_snapsh
     analyze_score_trends, get_significant_changes, load_latest_valid_snapshot
 from generator import generate_html, save_html
 from intel_fetcher import load_match_intel, get_all_match_keys, get_intel_age_hours, \
-    refresh_intel_on_odds_update
+    refresh_intel_on_odds_update, enrich_intel_with_analysis, save_match_intel
 from ai_analyzer import batch_analyze, ai_available
 
 # 配置常量
@@ -86,7 +86,11 @@ def run_once():
         print(f"[AI] 大模型分析引擎已启用，正在综合分析所有比赛...")
     ai_results = batch_analyze(analyzed, match_intel)
 
-    # 8. 生成 HTML 统计表（含 AI 分析）
+    # 7b. 将 AI 分析结果反哺到情报中（赔率与情报联动）
+    match_intel = enrich_intel_with_analysis(match_intel, ai_results, analyzed)
+    save_match_intel(match_intel)
+
+    # 8. 生成 HTML 统计表（含 AI 分析 + 联动情报）
     html = generate_html(data, analyzed, significant, match_intel, all_snapshots, ai_results)
     html_path = save_html(html)
 

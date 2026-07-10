@@ -416,6 +416,13 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
                 "news": intel.get("news", ""),
                 "history_head2head": intel.get("history_head2head", ""),
                 "prediction": intel.get("prediction", ""),
+                # === 赔率联动字段（enrich_intel_with_analysis 注入） ===
+                "odds_trend": intel.get("odds_trend", ""),
+                "odds_top3": intel.get("odds_top3", ""),
+                "ai_prediction": intel.get("ai_prediction", ""),
+                "ai_key_factors": intel.get("ai_key_factors", []),
+                "ai_recommendation": intel.get("ai_recommendation", ""),
+                "ai_enriched_at": intel.get("ai_enriched_at", ""),
             },
             "ai": (ai_results or {}).get(match_key, {}),  # AI 大模型分析结果
         })
@@ -1657,7 +1664,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
         var best = top5[0];
         var intel = match.intel || {{}};
         var market = match.market || {{}};
-        var hasIntel = !!(intel.team_form_home || intel.players_home || intel.news);
+        var hasIntel = !!(intel.team_form_home || intel.players_home || intel.news || intel.odds_trend || intel.ai_prediction);
         var trends = match.trends;
         var highTemp = false;
         var extreme = false;
@@ -2040,7 +2047,8 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
             // 多维情报面板
             var intel = m.intel || {{}};
             var intelHtml = '';
-            var hasIntelPanel = intel.team_form_home || intel.team_form_away || intel.players_home || intel.news;
+            var hasIntelPanel = intel.team_form_home || intel.team_form_away || intel.players_home || intel.news
+                || intel.odds_trend || intel.ai_prediction || (intel.ai_key_factors && intel.ai_key_factors.length > 0);
             if (hasIntelPanel) {{
                 var metaTags = '';
                 if (intel.stage) metaTags += '<span class="intel-meta-tag">' + intel.stage + '</span>';
@@ -2055,10 +2063,33 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
                 if (intel.players_away) rows += '<div class="intel-row"><span class="intel-label">客队球员</span><span class="intel-content">' + intel.players_away + '</span></div>';
                 if (intel.news) rows += '<div class="intel-row"><span class="intel-label">消息面</span><span class="intel-content">' + intel.news + '</span></div>';
 
+                // === 赔率联动情报（AI 分析反哺） ===
+                if (intel.odds_trend) {{
+                    rows += '<div class="intel-row" style="background:rgba(25,118,210,0.04);border-radius:4px;"><span class="intel-label" style="color:#1565c0;">📊 赔率趋势</span><span class="intel-content" style="color:#1565c0;font-weight:500;">' + intel.odds_trend + '</span></div>';
+                }}
+                if (intel.odds_top3) {{
+                    rows += '<div class="intel-row" style="background:rgba(25,118,210,0.02);border-radius:4px;"><span class="intel-label" style="color:#1565c0;">🏆 最低赔率</span><span class="intel-content">' + intel.odds_top3 + '</span></div>';
+                }}
+                if (intel.ai_prediction) {{
+                    rows += '<div class="intel-row" style="background:rgba(211,47,47,0.04);border-radius:4px;"><span class="intel-label" style="color:#c62828;">🤖 AI预测</span><span class="intel-content" style="color:#c62828;">' + intel.ai_prediction + '</span></div>';
+                }}
+                if (intel.ai_key_factors && intel.ai_key_factors.length > 0) {{
+                    var factorsHtml = '<div class="intel-row" style="background:rgba(211,47,47,0.02);border-radius:4px;"><span class="intel-label" style="color:#c62828;">🔑 关键因素</span><span class="intel-content">';
+                    for (var fi = 0; fi < intel.ai_key_factors.length; fi++) {{
+                        factorsHtml += '<span class="ai-factor-tag">' + intel.ai_key_factors[fi] + '</span> ';
+                    }}
+                    factorsHtml += '</span></div>';
+                    rows += factorsHtml;
+                }}
+                if (intel.ai_recommendation) {{
+                    rows += '<div class="intel-row" style="background:rgba(46,125,50,0.04);border-radius:4px;"><span class="intel-label" style="color:#2e7d32;">💡 投注方向</span><span class="intel-content" style="color:#2e7d32;">' + intel.ai_recommendation + '</span></div>';
+                }}
+
                 // 情报更新时间提示
                 var intelNote = '';
                 if (intel.updated_at) {{
-                    intelNote = '<div style="font-size:10px;color:#aaa;margin-top:6px;">情报随赔率同步更新，最近刷新: ' + intel.updated_at + '</div>';
+                    var enrichedAt = intel.ai_enriched_at || intel.updated_at;
+                    intelNote = '<div style="font-size:10px;color:#aaa;margin-top:6px;">🔄 赔率联动更新 · 最近刷新: ' + enrichedAt + '</div>';
                 }}
 
                 intelHtml = '<div class="intel-section">'

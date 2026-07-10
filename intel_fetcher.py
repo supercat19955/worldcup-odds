@@ -99,6 +99,85 @@ def refresh_intel_on_odds_update():
     return intel_data
 
 
+def enrich_intel_with_analysis(intel_data, ai_results, analyzed_results):
+    """
+    将 AI 分析结果 + 赔率趋势反哺到情报数据中，实现赔率与情报的联动更新。
+
+    每次赔率更新后，AI 分析会产生基于最新赔率的新洞察。
+    这些洞察应注入情报中，使后续分析能利用不断累积的情报。
+    """
+    if not ai_results:
+        return intel_data
+
+    for match_key, ai_result in ai_results.items():
+        if match_key not in intel_data:
+            continue
+
+        analysis_text = ai_result.get("analysis", "")
+        prediction_text = ai_result.get("prediction", "")
+        key_factors = ai_result.get("key_factors", [])
+        source = ai_result.get("source", "offline")
+        recommendation = ai_result.get("recommendation", "")
+
+        # 注入 AI 分析结果到情报
+        if analysis_text:
+            intel_data[match_key]["ai_analysis"] = analysis_text
+        if prediction_text:
+            intel_data[match_key]["ai_prediction"] = prediction_text
+        if key_factors:
+            intel_data[match_key]["ai_key_factors"] = key_factors
+        if recommendation:
+            intel_data[match_key]["ai_recommendation"] = recommendation
+        intel_data[match_key]["ai_source"] = source
+
+        # 提取赔率趋势摘要注入情报
+        for r in analyzed_results:
+            r_home = r.get("home_team", "")
+            r_away = r.get("away_team", "")
+            if f"{r_home} vs {r_away}" == match_key:
+                trends = r.get("trend_summary", {})
+                up_c = trends.get("up", 0)
+                down_c = trends.get("down", 0)
+                flat_c = trends.get("flat", 0)
+                new_c = trends.get("new", 0)
+
+                # 计算赔率倾向信号
+                if down_c > up_c:
+                    signal = "机构看好低比分"
+                elif up_c > down_c:
+                    signal = "市场热度分散"
+                else:
+                    signal = "市场平稳"
+
+                top5_scores = []
+                scores_dict = r.get("score_odds", {}).get("scores", {})
+                if scores_dict:
+                    try:
+                        sorted_s = sorted(scores_dict.items(), key=lambda x: float(x[1]))
+                        for i, (s, v) in enumerate(sorted_s[:3]):
+                            top5_scores.append(f"{s}@{v}")
+                    except (ValueError, TypeError):
+                        pass
+
+                intel_data[match_key]["odds_trend"] = (
+                    f"▲{up_c}升 ▼{down_c}降 →{flat_c}平 +{new_c}新 | {signal}"
+                )
+                if top5_scores:
+                    intel_data[match_key]["odds_top3"] = ", ".join(top5_scores)
+                break
+
+        # 标记情报来源为 AI+赔率联动
+        if not intel_data[match_key].get("intel_source"):
+            intel_data[match_key]["intel_source"] = "manual"
+        # 添加联动标记
+        intel_data[match_key]["ai_enriched_at"] = intel_data[match_key].get(
+            "intel_updated_at", ""
+        )
+
+    print(f"[情报] AI分析结果已反哺到 {len(ai_results)} 场比赛情报中")
+    return intel_data
+
+
 def get_betting_deadline(match_date, match_time):
     """
     推算投注截止时间（通常开赛前5分钟截止）
