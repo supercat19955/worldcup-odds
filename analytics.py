@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 赔率分析模块：Overround、隐含概率、赔率变化
+接收已加载的数据，不再自行读取磁盘，避免重复 I/O
 """
 import os
 import json
 from glob import glob
+
 
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "data", "snapshots")
 
@@ -35,32 +37,13 @@ def compute_implied_probabilities(scores):
         odds = float(odds_str)
         if odds > 0:
             raw_implied = 1.0 / odds
-            fair_prob = raw_implied / total  # 标准化后的概率
+            fair_prob = raw_implied / total
             probs[score] = {
                 "odds": odds,
                 "raw_implied": round(raw_implied * 100, 2),
                 "fair_prob": round(fair_prob * 100, 2),
             }
-    # 按 fair_prob 降序排序
     return dict(sorted(probs.items(), key=lambda x: -x[1]["fair_prob"]))
-
-
-def load_latest_snapshot():
-    """加载最新快照"""
-    files = sorted(glob(os.path.join(SNAPSHOT_DIR, "crs_odds_*.json")))
-    if not files:
-        return None
-    with open(files[-1], "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_earliest_snapshot():
-    """加载最早快照"""
-    files = sorted(glob(os.path.join(SNAPSHOT_DIR, "crs_odds_*.json")))
-    if not files:
-        return None
-    with open(files[0], "r", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def compute_odds_changes(latest, earliest):
@@ -83,13 +66,29 @@ def compute_odds_changes(latest, earliest):
     return dict(sorted(changes.items(), key=lambda x: -abs(x[1]["pct_change"])))
 
 
-def generate_analytics_html():
-    """生成分析报告 HTML"""
-    latest_data = load_latest_snapshot()
-    earliest_data = load_earliest_snapshot()
+def _load_snapshot_files():
+    """获取所有快照文件（按时间排序）"""
+    if not os.path.exists(SNAPSHOT_DIR):
+        return []
+    return sorted(glob(os.path.join(SNAPSHOT_DIR, "crs_odds_*.json")))
 
+
+def generate_analytics_html(latest_data=None, all_snapshots=None):
+    """
+    生成分析报告 HTML。
+    接受预加载的数据，避免重复读取磁盘。
+
+    Args:
+        latest_data: 当前快照 dict（必填）
+        all_snapshots: [(fetch_time, data), ...] 全部快照（可选，用于找最早）
+    """
     if not latest_data:
         return "<p>无快照数据</p>"
+
+    # 找最早快照
+    earliest_data = None
+    if all_snapshots and len(all_snapshots) > 0:
+        earliest_data = all_snapshots[0][1]  # 第一个就是最早的
 
     rows_html = ""
     for match in latest_data.get("matches", []):
@@ -213,8 +212,3 @@ def generate_analytics_html():
         </div>'''
 
     return rows_html
-
-
-if __name__ == "__main__":
-    html = generate_analytics_html()
-    print(html[:500])

@@ -294,8 +294,9 @@ def build_score_matrix(match):
     return match_header
 
 
-def generate_html(data, analyzed_results, significant_changes, match_intel=None):
-    """生成完整的比分赔率 HTML 统计表（含多维度智能预测）"""
+def generate_html(data, analyzed_results, significant_changes, match_intel=None,
+                  all_snapshots=None, ai_results=None):
+    """生成完整的比分赔率 HTML 统计表（含多维度智能预测 + AI大模型分析）"""
     fetch_time = data.get("fetch_time", "")
     match_count = data.get("match_count", 0)
     is_fallback = data.get("_fallback", False)
@@ -416,6 +417,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                 "history_head2head": intel.get("history_head2head", ""),
                 "prediction": intel.get("prediction", ""),
             },
+            "ai": (ai_results or {}).get(match_key, {}),  # AI 大模型分析结果
         })
     prediction_json = _json.dumps(prediction_data, ensure_ascii=False)
 
@@ -522,8 +524,8 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
         </div>
         """
 
-    # 赔率分析：Overround、隐含概率、赔率变化
-    analytics_html = generate_analytics_html()
+    # 赔率分析：Overround、隐含概率、赔率变化（复用已加载数据，不重复读盘）
+    analytics_html = generate_analytics_html(latest_data=data, all_snapshots=all_snapshots)
 
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -957,6 +959,60 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
         .market-val.market-away {{ color: #2e7d32; }}
         .predict-card.has-intel {{ border-left: 3px solid #1565c0; }}
         .predict-card.no-intel {{ border-left: 3px solid #e0e0e0; }}
+        .ai-badge {{
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 700;
+            margin-left: 6px;
+            vertical-align: middle;
+        }}
+        .ai-badge.on {{ background: #e8f5e9; color: #2e7d32; }}
+        .ai-badge.off {{ background: #f5f5f5; color: #999; }}
+        .ai-analysis-section {{
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: linear-gradient(135deg, #f3e5f5 0%, #ede7f6 100%);
+            border-radius: 8px;
+            border: 1px solid #ce93d8;
+            font-size: 12px;
+            line-height: 1.6;
+        }}
+        .ai-section-title {{
+            font-size: 11px;
+            font-weight: 700;
+            color: #7b1fa2;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }}
+        .ai-analysis-text {{
+            color: #333;
+            margin-bottom: 8px;
+        }}
+        .ai-key-factors {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 6px;
+        }}
+        .ai-factor-tag {{
+            padding: 2px 8px;
+            background: #fff;
+            border: 1px solid #ce93d8;
+            border-radius: 12px;
+            font-size: 11px;
+            color: #6a1b9a;
+        }}
+        .ai-recommendation {{
+            font-weight: 600;
+            color: #4a148c;
+            padding: 4px 8px;
+            background: rgba(255,255,255,0.7);
+            border-radius: 4px;
+        }}
         .predict-deadline {{
             margin-top: 6px;
             padding: 6px 10px;
@@ -1344,18 +1400,12 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
             margin-top: 1px;
             font-weight: 600;
         }}
-        .score-cell.up {{
-        }}
         .score-cell.up .val {{ color: #c62828; }}
         .score-cell.up .delta {{ color: #c62828; }}
         .score-cell.up .prev-val {{ color: #999; }}
-        .score-cell.down {{
-        }}
         .score-cell.down .val {{ color: #2e7d32; }}
         .score-cell.down .delta {{ color: #2e7d32; }}
         .score-cell.down .prev-val {{ color: #999; }}
-        .score-cell.new {{
-        }}
         .score-cell.removed {{
             color: #bbb;
             text-decoration: line-through;
@@ -2037,6 +2087,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                     + '<div class="top5-mini">' + top5mini + '</div>'
                     + deadlineHtml
                     + intelHtml
+                    + renderAiAnalysis(m)
                     + '</div>';
             }} else {{
                 html += '<div class="predict-card">'
@@ -2047,6 +2098,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                     + '<div class="predict-reason">暂无赔率数据，请等待开售</div>'
                     + deadlineHtml
                     + intelHtml
+                    + renderAiAnalysis(m)
                     + '</div>';
             }}
         }}
@@ -2099,6 +2151,42 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
     // 页面加载：渲染预测 + 启动定时器
     renderPredictions();
     startTimers();
+
+    // ========== AI 大模型分析渲染 ==========
+    function renderAiAnalysis(m) {{
+        var ai = m.ai || {{}};
+        var hasAi = !!(ai.analysis || ai.prediction);
+        var isOnline = ai.source === 'ai';
+
+        var html = '';
+        if (hasAi) {{
+            var badge = isOnline
+                ? '<span class="ai-badge on">🤖 AI大模型</span>'
+                : '<span class="ai-badge off">📋 离线分析</span>';
+
+            html += '<div class="ai-analysis-section">'
+                + '<div class="ai-section-title">🧠 AI 智能分析' + badge + '</div>';
+
+            if (ai.analysis) {{
+                html += '<div class="ai-analysis-text">' + ai.analysis + '</div>';
+            }}
+
+            if (ai.key_factors && ai.key_factors.length) {{
+                html += '<div class="ai-key-factors">';
+                for (var i = 0; i < ai.key_factors.length; i++) {{
+                    html += '<span class="ai-factor-tag">' + ai.key_factors[i] + '</span>';
+                }}
+                html += '</div>';
+            }}
+
+            if (ai.recommendation) {{
+                html += '<div class="ai-recommendation">💡 ' + ai.recommendation + '</div>';
+            }}
+
+            html += '</div>';
+        }}
+        return html;
+    }}
 
     function showTrail(event, el) {{
         event.stopPropagation();
