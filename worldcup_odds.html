@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>世界杯赔率统计表 - 2026-07-10 09:51:21</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, "Microsoft YaHei", "Segoe UI", sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            padding: 20px;
+            min-width: 1400px;
+        }
+        .header {
+            background: linear-gradient(135deg, #1a237e 0%, #283593 50%, #3949ab 100%);
+            color: white;
+            padding: 24px 32px;
+            border-radius: 12px 12px 0 0;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+        .header .meta {
+            font-size: 14px;
+            opacity: 0.85;
+            display: flex;
+            gap: 24px;
+        }
+        .header .meta span {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .header .meta .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+            display: inline-block;
+        }
+
+        .summary-bar {
+            display: flex;
+            gap: 12px;
+            padding: 16px 24px;
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        .summary-item {
+            flex: 1;
+            text-align: center;
+            padding: 12px;
+            border-radius: 8px;
+            background: #f5f5f5;
+        }
+        .summary-item .summary-label {
+            display: block;
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+        .summary-item .summary-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+        }
+        .trend-up-bg { background: #ffebee; }
+        .trend-up-bg .summary-value { color: #c62828; }
+        .trend-down-bg { background: #e8f5e9; }
+        .trend-down-bg .summary-value { color: #2e7d32; }
+        .trend-flat-bg { background: #f5f5f5; }
+        .trend-flat-bg .summary-value { color: #757575; }
+        .trend-mixed-bg { background: #fff3e0; }
+        .trend-mixed-bg .summary-value { color: #e65100; }
+        .trend-new-bg { background: #e3f2fd; }
+        .trend-new-bg .summary-value { color: #1565c0; }
+
+        .significant-section {
+            margin: 16px 0;
+            padding: 16px 24px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        .significant-section h2 {
+            font-size: 16px;
+            color: #333;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .sig-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .sig-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .sig-item.trend-up { background: #ffebee; }
+        .sig-item.trend-down { background: #e8f5e9; }
+        .sig-match { font-weight: bold; min-width: 160px; }
+        .sig-type {
+            background: #e0e0e0;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #555;
+        }
+        .sig-item-label { color: #666; min-width: 50px; }
+        .sig-change { font-weight: bold; min-width: 140px; }
+        .sig-item.trend-up .sig-change { color: #c62828; }
+        .sig-item.trend-down .sig-change { color: #2e7d32; }
+        .sig-odds { color: #888; font-size: 12px; }
+
+        .table-container {
+            background: white;
+            border-radius: 0 0 12px 12px;
+            overflow-x: auto;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        thead th {
+            background: #283593;
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: 600;
+            white-space: nowrap;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        thead th.section-had { background: #1565c0; }
+        thead th.section-hhad { background: #6a1b9a; }
+        thead th.section-info { background: #283593; }
+
+        tbody tr {
+            border-bottom: 1px solid #e0e0e0;
+            transition: background 0.2s;
+        }
+        tbody tr:hover { background: #f5f7fa; }
+        tbody tr:nth-child(even) { background: #fafafa; }
+        tbody tr:nth-child(even):hover { background: #f0f4f8; }
+
+        td {
+            padding: 10px 8px;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .match-num {
+            font-weight: bold;
+            color: #1565c0;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .match-teams {
+            text-align: left;
+            min-width: 140px;
+        }
+        .match-teams .team {
+            font-weight: 600;
+            font-size: 14px;
+            padding: 2px 0;
+        }
+        .match-teams .team .rank {
+            font-size: 11px;
+            color: #999;
+            font-weight: normal;
+        }
+        .match-teams .vs {
+            font-size: 11px;
+            color: #bbb;
+            text-align: center;
+        }
+        .match-time {
+            font-size: 12px;
+            color: #555;
+            white-space: nowrap;
+        }
+        .match-remark {
+            font-size: 11px;
+            color: #999;
+            max-width: 200px;
+        }
+
+        .odds-cell {
+            font-size: 14px;
+            min-width: 100px;
+        }
+        .odds-cell .odds-val {
+            font-weight: bold;
+            font-size: 16px;
+            display: inline-block;
+            min-width: 40px;
+        }
+        .odds-cell .arrow {
+            font-size: 11px;
+            display: inline-block;
+            margin: 0 4px;
+        }
+        .odds-cell .change-val {
+            display: block;
+            font-size: 11px;
+            margin-top: 2px;
+        }
+        .odds-cell .prev-odds {
+            display: block;
+            font-size: 10px;
+            color: #aaa;
+            margin-top: 1px;
+        }
+        .arrow.up { color: #c62828; }
+        .arrow.down { color: #2e7d32; }
+        .arrow.flat { color: #bbb; }
+        .arrow.new { color: #1565c0; font-size: 10px; }
+
+        .trend-up { background: #fff5f5; }
+        .trend-up .odds-val { color: #c62828; }
+        .trend-up .change-val { color: #c62828; }
+        .trend-down { background: #f0faf0; }
+        .trend-down .odds-val { color: #2e7d32; }
+        .trend-down .change-val { color: #2e7d32; }
+        .trend-flat .odds-val { color: #555; }
+        .trend-new { background: #e3f2fd; }
+        .trend-new .odds-val { color: #1565c0; }
+        .no-data {
+            color: #ccc;
+            font-style: italic;
+            font-size: 12px;
+        }
+
+        .goalline {
+            font-size: 12px;
+            color: #6a1b9a;
+            font-weight: 600;
+        }
+        .goalline-changed {
+            color: #e65100;
+        }
+        .goalline-changed::before { content: "⚠ "; }
+
+        .odds-update {
+            font-size: 11px;
+            color: #999;
+            white-space: nowrap;
+        }
+
+        .overall-trend { min-width: 100px; }
+        .badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        .badge-up { background: #ffebee; color: #c62828; }
+        .badge-down { background: #e8f5e9; color: #2e7d32; }
+        .badge-flat { background: #f5f5f5; color: #757575; }
+        .badge-mixed { background: #fff3e0; color: #e65100; }
+        .badge-new { background: #e3f2fd; color: #1565c0; }
+
+        .footer {
+            margin-top: 16px;
+            padding: 12px 24px;
+            background: white;
+            border-radius: 8px;
+            font-size: 12px;
+            color: #888;
+            text-align: center;
+        }
+        .footer .legend {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .auto-refresh {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            font-size: 12px;
+            z-index: 100;
+        }
+        .auto-refresh .pulse {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+            display: inline-block;
+            margin-right: 6px;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="auto-refresh">
+        <span class="pulse"></span>
+        每小时自动更新 | 上次: 2026-07-10 09:51:21
+    </div>
+
+    <div class="header">
+        <h1>⚽ 2026 世界杯赔率统计表</h1>
+        <div class="meta">
+            <span><span class="dot"></span> 数据来源: m.sporttery.cn (中国体彩网)</span>
+            <span>抓取时间: 2026-07-10 09:51:21</span>
+            <span>比赛数量: 3</span>
+            <span>对比时间: 2026-07-10 09:48:00 (模拟)</span>
+        </div>
+    </div>
+
+    
+    <div class="summary-bar">
+        <div class="summary-item">
+            <span class="summary-label">总比赛</span>
+            <span class="summary-value">3</span>
+        </div>
+        <div class="summary-item trend-up-bg">
+            <span class="summary-label">赔率上升</span>
+            <span class="summary-value">0</span>
+        </div>
+        <div class="summary-item trend-down-bg">
+            <span class="summary-label">赔率下降</span>
+            <span class="summary-value">0</span>
+        </div>
+        <div class="summary-item trend-flat-bg">
+            <span class="summary-label">保持稳定</span>
+            <span class="summary-value">1</span>
+        </div>
+        <div class="summary-item trend-mixed-bg">
+            <span class="summary-label">涨跌互现</span>
+            <span class="summary-value">2</span>
+        </div>
+        <div class="summary-item trend-new-bg">
+            <span class="summary-label">新增比赛</span>
+            <span class="summary-value">0</span>
+        </div>
+    </div>
+    
+
+    
+        <div class="significant-section">
+            <h2>显著赔率变化 TOP 9</h2>
+            <div class="sig-list">
+                <div class="sig-item trend-down">
+                    <span class="sig-match">西班牙 vs 比利时</span>
+                    <span class="sig-type">HAD</span>
+                    <span class="sig-item-label">客胜</span>
+                    <span class="sig-change">▼ -0.35 (-6.0%)</span>
+                    <span class="sig-odds">5.85 → 5.50</span>
+                </div>
+            
+                <div class="sig-item trend-down">
+                    <span class="sig-match">挪威 vs 英格兰</span>
+                    <span class="sig-type">HHAD</span>
+                    <span class="sig-item-label">主胜</span>
+                    <span class="sig-change">▼ -0.3 (-13.8%)</span>
+                    <span class="sig-odds">2.18 → 1.88</span>
+                </div>
+            
+                <div class="sig-item trend-down">
+                    <span class="sig-match">挪威 vs 英格兰</span>
+                    <span class="sig-type">HAD</span>
+                    <span class="sig-item-label">主胜</span>
+                    <span class="sig-change">▼ -0.28 (-6.8%)</span>
+                    <span class="sig-odds">4.09 → 3.81</span>
+                </div>
+            
+                <div class="sig-item trend-down">
+                    <span class="sig-match">西班牙 vs 比利时</span>
+                    <span class="sig-type">HHAD</span>
+                    <span class="sig-item-label">客胜</span>
+                    <span class="sig-change">▼ -0.22 (-8.6%)</span>
+                    <span class="sig-odds">2.55 → 2.33</span>
+                </div>
+            
+                <div class="sig-item trend-down">
+                    <span class="sig-match">阿根廷 vs 瑞士</span>
+                    <span class="sig-type">HAD</span>
+                    <span class="sig-item-label">平</span>
+                    <span class="sig-change">▼ -0.2 (-5.7%)</span>
+                    <span class="sig-odds">3.5 → 3.30</span>
+                </div>
+            
+                <div class="sig-item trend-up">
+                    <span class="sig-match">西班牙 vs 比利时</span>
+                    <span class="sig-type">HHAD</span>
+                    <span class="sig-item-label">主胜</span>
+                    <span class="sig-change">▲ +0.18 (+7.5%)</span>
+                    <span class="sig-odds">2.4 → 2.58</span>
+                </div>
+            
+                <div class="sig-item trend-up">
+                    <span class="sig-match">挪威 vs 英格兰</span>
+                    <span class="sig-type">HAD</span>
+                    <span class="sig-item-label">客胜</span>
+                    <span class="sig-change">▲ +0.15 (+9.6%)</span>
+                    <span class="sig-odds">1.57 → 1.72</span>
+                </div>
+            
+                <div class="sig-item trend-up">
+                    <span class="sig-match">西班牙 vs 比利时</span>
+                    <span class="sig-type">HAD</span>
+                    <span class="sig-item-label">主胜</span>
+                    <span class="sig-change">▲ +0.12 (+9.0%)</span>
+                    <span class="sig-odds">1.34 → 1.46</span>
+                </div>
+            
+                <div class="sig-item trend-up">
+                    <span class="sig-match">挪威 vs 英格兰</span>
+                    <span class="sig-type">HHAD</span>
+                    <span class="sig-item-label">客胜</span>
+                    <span class="sig-change">▲ +0.12 (+3.8%)</span>
+                    <span class="sig-odds">3.18 → 3.30</span>
+                </div>
+            </div>
+        </div>
+        
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th class="section-info" rowspan="2">编号</th>
+                    <th class="section-info" rowspan="2">对阵</th>
+                    <th class="section-info" rowspan="2">比赛时间</th>
+                    <th class="section-info" rowspan="2">举办地点</th>
+                    <th class="section-had" colspan="3">胜平负 (HAD)</th>
+                    <th class="section-hhad" rowspan="2">让球</th>
+                    <th class="section-hhad" colspan="3">让球胜平负 (HHAD)</th>
+                    <th class="section-info" rowspan="2">赔率更新</th>
+                    <th class="section-info" rowspan="2">整体趋势</th>
+                </tr>
+                <tr>
+                    <th class="section-had">主胜 H</th>
+                    <th class="section-had">平 D</th>
+                    <th class="section-had">客胜 A</th>
+                    <th class="section-hhad">主胜 H</th>
+                    <th class="section-hhad">平 D</th>
+                    <th class="section-hhad">客胜 A</th>
+                </tr>
+            </thead>
+            <tbody>
+                
+        <tr>
+            <td class="match-num">周五098</td><td class="match-teams"><div class="team home">西班牙 <span class="rank">[世界杯1]</span></div><div class="vs">VS</div><div class="team away">比利时 <span class="rank">[世界杯1]</span></div></td><td class="match-time">2026-07-11<br>03:00:00</td><td class="match-remark">比赛将在美国-加利福尼亚州英格尔伍德举行</td>
+            <td class="odds-cell trend-up"><span class="odds-val">1.46</span><span class="arrow up">▲</span><span class="change-val">+0.12 (+9.0%)</span><span class="prev-odds">前: 1.34</span></td>
+            <td class="odds-cell trend-down"><span class="odds-val">3.80</span><span class="arrow down">▼</span><span class="change-val">-0.05 (-1.3%)</span><span class="prev-odds">前: 3.85</span></td>
+            <td class="odds-cell trend-down"><span class="odds-val">5.50</span><span class="arrow down">▼</span><span class="change-val">-0.35 (-6.0%)</span><span class="prev-odds">前: 5.85</span></td>
+            <td class="goalline">让-1</td>
+            <td class="odds-cell trend-up"><span class="odds-val">2.58</span><span class="arrow up">▲</span><span class="change-val">+0.18 (+7.5%)</span><span class="prev-odds">前: 2.4</span></td>
+            <td class="odds-cell trend-flat"><span class="odds-val">3.20</span><span class="arrow flat">→</span></td>
+            <td class="odds-cell trend-down"><span class="odds-val">2.33</span><span class="arrow down">▼</span><span class="change-val">-0.22 (-8.6%)</span><span class="prev-odds">前: 2.55</span></td>
+            <td class="odds-update">2026-07-09 20:12:46</td>
+            <td class="overall-trend"><span class="badge badge-mixed">◆ 涨跌互现</span></td>
+        </tr>
+        
+
+        <tr>
+            <td class="match-num">周六099</td><td class="match-teams"><div class="team home">挪威 <span class="rank">[世界杯2]</span></div><div class="vs">VS</div><div class="team away">英格兰 <span class="rank">[世界杯1]</span></div></td><td class="match-time">2026-07-12<br>05:00:00</td><td class="match-remark">比赛将在美国-佛罗里达州迈阿密加登斯举行</td>
+            <td class="odds-cell trend-down"><span class="odds-val">3.81</span><span class="arrow down">▼</span><span class="change-val">-0.28 (-6.8%)</span><span class="prev-odds">前: 4.09</span></td>
+            <td class="odds-cell trend-up"><span class="odds-val">3.50</span><span class="arrow up">▲</span><span class="change-val">+0.08 (+2.3%)</span><span class="prev-odds">前: 3.42</span></td>
+            <td class="odds-cell trend-up"><span class="odds-val">1.72</span><span class="arrow up">▲</span><span class="change-val">+0.15 (+9.6%)</span><span class="prev-odds">前: 1.57</span></td>
+            <td class="goalline">让+1</td>
+            <td class="odds-cell trend-down"><span class="odds-val">1.88</span><span class="arrow down">▼</span><span class="change-val">-0.3 (-13.8%)</span><span class="prev-odds">前: 2.18</span></td>
+            <td class="odds-cell trend-flat"><span class="odds-val">3.40</span><span class="arrow flat">→</span></td>
+            <td class="odds-cell trend-up"><span class="odds-val">3.30</span><span class="arrow up">▲</span><span class="change-val">+0.12 (+3.8%)</span><span class="prev-odds">前: 3.18</span></td>
+            <td class="odds-update">2026-07-09 19:41:54</td>
+            <td class="overall-trend"><span class="badge badge-mixed">◆ 涨跌互现</span></td>
+        </tr>
+        
+
+        <tr>
+            <td class="match-num">周六100</td><td class="match-teams"><div class="team home">阿根廷 <span class="rank">[世界杯1]</span></div><div class="vs">VS</div><div class="team away">瑞士 <span class="rank">[世界杯1]</span></div></td><td class="match-time">2026-07-12<br>09:00:00</td><td class="match-remark">比赛将在美国-密苏里州堪萨斯城举行</td>
+            <td class="odds-cell trend-down"><span class="odds-val">1.56</span><span class="arrow down">▼</span><span class="change-val">-0.03 (-1.9%)</span><span class="prev-odds">前: 1.59</span></td>
+            <td class="odds-cell trend-down"><span class="odds-val">3.30</span><span class="arrow down">▼</span><span class="change-val">-0.2 (-5.7%)</span><span class="prev-odds">前: 3.5</span></td>
+            <td class="odds-cell trend-up"><span class="odds-val">5.40</span><span class="arrow up">▲</span><span class="change-val">+0.05 (+0.9%)</span><span class="prev-odds">前: 5.35</span></td>
+            <td class="goalline">让-1</td>
+            <td class="odds-cell trend-flat"><span class="odds-val">3.00</span><span class="arrow flat">→</span></td>
+            <td class="odds-cell trend-flat"><span class="odds-val">3.10</span><span class="arrow flat">→</span></td>
+            <td class="odds-cell trend-flat"><span class="odds-val">2.11</span><span class="arrow flat">→</span></td>
+            <td class="odds-update">2026-07-09 16:22:51</td>
+            <td class="overall-trend"><span class="badge badge-flat">→ 保持稳定</span></td>
+        </tr>
+        
+            </tbody>
+        </table>
+    </div>
+
+    <div class="footer">
+        <div class="legend">
+            <span class="legend-item"><span class="arrow up">▲</span> 赔率上升 (主队赔率升高 = 不被看好)</span>
+            <span class="legend-item"><span class="arrow down">▼</span> 赔率下降 (主队赔率降低 = 被看好)</span>
+            <span class="legend-item"><span class="arrow flat">→</span> 赔率不变</span>
+            <span class="legend-item"><span class="arrow new">NEW</span> 新增赔率</span>
+        </div>
+        <div>数据仅供参考，不构成投注建议 | 每小时自动抓取更新 | © m.sporttery.cn</div>
+    </div>
+</body>
+</html>
