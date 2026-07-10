@@ -13,6 +13,7 @@ permissions:
   contents: write
   pages: write
   id-token: write
+  actions: write
 
 concurrency:
   group: odds-monitor
@@ -47,6 +48,18 @@ jobs:
         timeout-minutes: 8
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
+
+      - name: 注入刷新Token
+        run: |
+          if [ -n "${{ secrets.GH_PAT }}" ]; then
+            TOKEN="${{ secrets.GH_PAT }}"
+            echo "使用长期 GH_PAT"
+          else
+            TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            echo "使用临时 GITHUB_TOKEN"
+          fi
+          sed -i "s/__GH_PAT_PLACEHOLDER__/$TOKEN/g" output/worldcup_score_odds.html
+          echo "Token已注入到页面刷新按钮"
 
       - name: 提交数据快照
         continue-on-error: true

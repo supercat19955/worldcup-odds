@@ -1,12 +1,12 @@
 {
   "_meta": {
     "version": "2.0",
-    "last_updated": "2026-07-10 16:36:08",
-    "update_count": 23,
+    "last_updated": "2026-07-10 16:33:53",
+    "update_count": 21,
     "description": "比赛多维度情报数据，每次赔率更新时同步刷新"
   },
   "西班牙 vs 比利时": {
-    "intel_updated_at": "2026-07-10 16:36:08",
+    "intel_updated_at": "2026-07-10 16:33:53",
     "match_date": "2026-07-11",
     "match_time": "03:00",
     "stage": "世界杯1/4决赛",
@@ -32,10 +32,10 @@
     "odds_trend": "▲3升 ▼1降 →27平 +0新 | 市场热度分散",
     "odds_top3": "2:1@5.60, 2:0@6.50, 1:1@7.25",
     "intel_source": "manual",
-    "ai_enriched_at": "2026-07-10 16:36:08"
+    "ai_enriched_at": "2026-07-10 16:33:53"
   },
   "挪威 vs 英格兰": {
-    "intel_updated_at": "2026-07-10 16:36:08",
+    "intel_updated_at": "2026-07-10 16:33:53",
     "match_date": "2026-07-11",
     "match_time": "05:00",
     "stage": "世界杯1/4决赛",
@@ -61,10 +61,10 @@
     "odds_trend": "▲0升 ▼0降 →31平 +0新 | 市场平稳",
     "odds_top3": "1:2@6.50, 1:1@7.25, 2:1@9.00",
     "intel_source": "manual",
-    "ai_enriched_at": "2026-07-10 16:36:08"
+    "ai_enriched_at": "2026-07-10 16:33:53"
   },
   "阿根廷 vs 瑞士": {
-    "intel_updated_at": "2026-07-10 16:36:08",
+    "intel_updated_at": "2026-07-10 16:33:53",
     "match_date": "2026-07-12",
     "match_time": "09:00",
     "stage": "世界杯1/4决赛",
@@ -89,6 +89,6 @@
     "odds_trend": "▲0升 ▼0降 →31平 +0新 | 市场平稳",
     "odds_top3": "1:0@5.90, 1:1@5.90, 2:0@6.50",
     "intel_source": "manual",
-    "ai_enriched_at": "2026-07-10 16:36:08"
+    "ai_enriched_at": "2026-07-10 16:33:53"
   }
 }

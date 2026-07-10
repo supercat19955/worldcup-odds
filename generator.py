@@ -1580,11 +1580,90 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
             text-align: center;
             box-shadow: 0 1px 4px rgba(0,0,0,0.05);
         }}
+
+        /* ===== 手动刷新按钮 ===== */
+        .refresh-btn {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 18px;
+            background: rgba(255,255,255,0.2);
+            border: 1.5px solid rgba(255,255,255,0.5);
+            border-radius: 20px;
+            color: white;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+            user-select: none;
+        }}
+        .refresh-btn:hover {{
+            background: rgba(255,255,255,0.35);
+            border-color: rgba(255,255,255,0.8);
+            transform: scale(1.03);
+        }}
+        .refresh-btn:active {{
+            transform: scale(0.97);
+        }}
+        .refresh-btn:disabled {{
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }}
+        .refresh-btn .spinner {{
+            display: none;
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255,255,255,0.4);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }}
+        .refresh-btn.loading .spinner {{ display: inline-block; }}
+        .refresh-btn.loading .btn-text {{ opacity: 0.8; }}
+        @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
+        .refresh-btn.success {{
+            background: rgba(76,175,80,0.5);
+            border-color: rgba(76,175,80,0.8);
+        }}
+        .refresh-btn.error {{
+            background: rgba(244,67,54,0.5);
+            border-color: rgba(244,67,54,0.8);
+        }}
+
+        /* Toast 提示 */
+        .refresh-toast {{
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: white;
+            z-index: 9999;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+        }}
+        .refresh-toast.show {{ opacity: 1; }}
+        .refresh-toast.info {{ background: #1565c0; }}
+        .refresh-toast.success {{ background: #2e7d32; }}
+        .refresh-toast.error {{ background: #c62828; }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>⚽ 2026 世界杯比分赔率统计表</h1>
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <h1 style="margin: 0;">⚽ 2026 世界杯比分赔率统计表</h1>
+            <button class="refresh-btn" id="refreshBtn" onclick="triggerRefresh()" title="手动触发云端数据刷新（赔率+情报+AI分析）">
+                <span class="spinner"></span>
+                <span class="btn-text">🔄 刷新数据</span>
+            </button>
+        </div>
         <div class="meta">
             <span>📡 数据来源: m.sporttery.cn {'⚠️ [回退快照]' if is_fallback else ''}</span>
             <span>🕐 抓取时间: {fetch_time}</span>
@@ -1629,8 +1708,11 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
     {matrices_html}
 
     <div class="footer">
-        数据来源: 中国体育彩票竞彩网 (m.sporttery.cn) | 每小时自动更新 | 仅供数据分析参考，不构成投注建议
+        数据来源: 中国体育彩票竞彩网 (m.sporttery.cn) | 每30分钟云端自动更新 | 点击右上角「🔄 刷新数据」可手动即时刷新 | 仅供数据分析参考，不构成投注建议
     </div>
+
+    <!-- 手动刷新 Toast -->
+    <div class="refresh-toast" id="refreshToast"></div>
 
     <!-- 赔率轨迹弹窗 -->
     <div class="trail-overlay" id="trailOverlay" onclick="closeTrail(event)">
@@ -2278,6 +2360,147 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
             document.getElementById('trailOverlay').classList.remove('active');
         }}
     }});
+
+    // ===== 手动刷新数据 =====
+    var GH_TOKEN = '__GH_PAT_PLACEHOLDER__';
+    var GH_API = 'https://api.github.com/repos/supercat19955/worldcup-odds/actions/workflows/odds_monitor.yml/dispatches';
+    var REFRESH_COOLDOWN = 120000; // 2分钟冷却
+    var lastRefreshTime = 0;
+    var pollTimer = null;
+    var pollCount = 0;
+    var MAX_POLL = 20; // 最多轮询20次(约3.3分钟)
+
+    function showToast(msg, type) {{
+        type = type || 'info';
+        var toast = document.getElementById('refreshToast');
+        toast.textContent = msg;
+        toast.className = 'refresh-toast ' + type + ' show';
+        clearTimeout(toast._hideTimer);
+        toast._hideTimer = setTimeout(function() {{
+            toast.classList.remove('show');
+        }}, 4000);
+    }}
+
+    function setBtnState(state, text) {{
+        var btn = document.getElementById('refreshBtn');
+        btn.className = 'refresh-btn ' + state;
+        var textEl = btn.querySelector('.btn-text');
+        if (textEl) textEl.textContent = text;
+        btn.disabled = (state === 'loading');
+    }}
+
+    function triggerRefresh() {{
+        // 检测 Token 是否未配置
+        if (GH_TOKEN.indexOf('PLACEHOLDER') >= 0) {{
+            showToast('Token 尚未配置，请等待定时任务自动更新（每30分钟），或前往 GitHub Actions 手动触发', 'error');
+            return;
+        }}
+
+        var now = Date.now();
+        if (now - lastRefreshTime < REFRESH_COOLDOWN) {{
+            var remain = Math.ceil((REFRESH_COOLDOWN - (now - lastRefreshTime)) / 1000);
+            showToast('请等待 ' + remain + ' 秒后再刷新（防止重复触发）', 'error');
+            return;
+        }}
+
+        setBtnState('loading', '⏳ 触发中...');
+        showToast('正在触发云端数据刷新...', 'info');
+
+        fetch(GH_API, {{
+            method: 'POST',
+            headers: {{
+                'Authorization': 'token ' + GH_TOKEN,
+                'Accept': 'application/vnd.github+json',
+                'X-GitHub-Api-Version': '2022-11-28'
+            }},
+            body: JSON.stringify({{ ref: 'main' }})
+        }})
+        .then(function(res) {{
+            if (!res.ok) {{
+                if (res.status === 401 || res.status === 403) {{
+                    throw new Error('Token 已失效，请更新页面中的 GH_TOKEN');
+                }}
+                throw new Error('API 返回 ' + res.status + ' ' + res.statusText);
+            }}
+            lastRefreshTime = now;
+            setBtnState('loading', '⏳ 云端运行中...');
+            showToast('✅ 已触发！云端正在抓取赔率 + 情报 + AI分析，约90秒后自动刷新页面', 'success');
+            // 开始轮询
+            pollCount = 0;
+            if (pollTimer) clearInterval(pollTimer);
+            pollTimer = setInterval(checkWorkflowStatus, 10000); // 每10秒轮询
+        }})
+        .catch(function(err) {{
+            setBtnState('error', '❌ 触发失败');
+            showToast('触发失败: ' + err.message, 'error');
+            setTimeout(function() {{
+                setBtnState('', '🔄 刷新数据');
+            }}, 3000);
+        }});
+    }}
+
+    function checkWorkflowStatus() {{
+        pollCount++;
+        var runsUrl = 'https://api.github.com/repos/supercat19955/worldcup-odds/actions/runs?per_page=3';
+        fetch(runsUrl, {{
+            headers: {{
+                'Authorization': 'token ' + GH_TOKEN,
+                'Accept': 'application/vnd.github+json'
+            }}
+        }})
+        .then(function(res) {{ return res.json(); }})
+        .then(function(data) {{
+            var runs = data.workflow_runs || [];
+            // 找到最新的 workflow_dispatch 运行
+            var latest = null;
+            for (var i = 0; i < runs.length; i++) {{
+                if (runs[i].event === 'workflow_dispatch') {{
+                    latest = runs[i];
+                    break;
+                }}
+            }}
+            if (!latest) {{
+                // 还没出现，继续等
+                if (pollCount >= MAX_POLL) stopPolling();
+                return;
+            }}
+
+            if (latest.status === 'completed') {{
+                stopPolling();
+                if (latest.conclusion === 'success') {{
+                    setBtnState('success', '✅ 完成！即将刷新');
+                    showToast('🎉 云端数据已更新！页面即将自动刷新...', 'success');
+                    setTimeout(function() {{ location.reload(); }}, 1500);
+                }} else {{
+                    setBtnState('error', '❌ 运行失败');
+                    showToast('云端运行失败，请稍后重试或检查 GitHub Actions', 'error');
+                    setTimeout(function() {{ setBtnState('', '🔄 刷新数据'); }}, 5000);
+                }}
+            }} else if (latest.status === 'in_progress' || latest.status === 'queued') {{
+                var elapsed = Math.floor((Date.now() - lastRefreshTime) / 1000);
+                setBtnState('loading', '⏳ 运行中 ' + elapsed + 's...');
+                if (pollCount % 3 === 0) {{
+                    showToast('云端正在处理（已运行 ' + elapsed + ' 秒），请稍候...', 'info');
+                }}
+                if (pollCount >= MAX_POLL) {{
+                    stopPolling();
+                    setBtnState('', '🔄 刷新数据');
+                    showToast('等待超时，页面将手动刷新', 'info');
+                    setTimeout(function() {{ location.reload(); }}, 2000);
+                }}
+            }}
+        }})
+        .catch(function() {{
+            if (pollCount >= MAX_POLL) stopPolling();
+        }});
+    }}
+
+    function stopPolling() {{
+        if (pollTimer) {{
+            clearInterval(pollTimer);
+            pollTimer = null;
+        }}
+    }}
     </script>
 </body>
 </html>"""
