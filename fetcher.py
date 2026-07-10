@@ -50,7 +50,7 @@ def fetch_matches(pool_code="crs", page=1, limit=100):
     for attempt in range(3):
         try:
             resp = requests.get(MATCH_CALCULATOR_URL, params=params,
-                                headers=HEADERS, timeout=15)
+                                headers=HEADERS, timeout=(10, 15))
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.RequestException as e:

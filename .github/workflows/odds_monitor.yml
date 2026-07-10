@@ -44,7 +44,7 @@ jobs:
 
       - name: 运行赔率监控
         run: python main.py
-        timeout-minutes: 5
+        timeout-minutes: 8
         env:
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
 
