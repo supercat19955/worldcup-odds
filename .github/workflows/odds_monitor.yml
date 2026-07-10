@@ -56,12 +56,10 @@ jobs:
 
       - name: 发布到 GitHub Pages
         if: success()
-        run: |
-          cp output/worldcup_score_odds.html worldcup_score_odds.html
-          git checkout --orphan gh-pages-temp
-          git rm -rf --quiet . 2>/dev/null || true
-          cp "${GITHUB_WORKSPACE}/output/worldcup_score_odds.html" worldcup_score_odds.html
-          git add worldcup_score_odds.html
-          git commit -m "自动发布网页 [$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')]"
-          git push origin gh-pages-temp:gh-pages --force
-          echo "网页已发布到 gh-pages 分支"
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./output
+          publish_branch: gh-pages
+          force_orphan: true
+          commit_message: "自动发布网页 [skip ci]"
