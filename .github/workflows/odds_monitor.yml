@@ -5,18 +5,12 @@ name: World Cup Odds Monitor
 
 on:
   schedule:
-    # 每10分钟执行一次 (UTC时间)
     - cron: '*/10 * * * *'
-  # 也可以手动触发
   workflow_dispatch:
 
-# 权限: 允许推送代码 + 发布 GitHub Pages
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
-# 确保同一时间只有一个实例在运行
 concurrency:
   group: odds-monitor
   cancel-in-progress: false
@@ -27,10 +21,11 @@ jobs:
     timeout-minutes: 8
 
     steps:
-      - name: Checkout 代码仓库
+      - name: 检出代码
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 完整历史, 用于趋势对比
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 安装 Python
         uses: actions/setup-python@v5
@@ -44,26 +39,29 @@ jobs:
         run: python main.py
         timeout-minutes: 5
 
-      - name: 提交数据更新
+      - name: 提交数据快照
         if: success()
         run: |
           git config user.name "Odds Monitor Bot"
           git config user.email "bot@odds.monitor"
-          git add data/snapshots/ data/match_intel.json data/intel_history/ output/worldcup_score_odds.html
+          git add data/snapshots/ data/match_intel.json data/intel_history/
           if git diff --staged --quiet; then
-            echo "✅ 赔率无变化，跳过提交"
+            echo "数据无变化，跳过提交"
           else
-            git commit -m "🔄 自动更新: 赔率快照 & 分析报告 [$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')]"
+            git commit -m "自动更新: 赔率快照 [$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')]"
+            git pull --rebase origin main || true
             git push origin main
-            echo "✅ 数据已提交并推送"
+            echo "数据已提交并推送"
           fi
 
       - name: 发布到 GitHub Pages
         if: success()
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./output
-          destination_dir: .
-          keep_files: false
-          commit_message: "🌐 自动发布赔率报告"
+        run: |
+          cp output/worldcup_score_odds.html worldcup_score_odds.html
+          git checkout --orphan gh-pages-temp
+          git rm -rf --quiet . 2>/dev/null || true
+          cp "${GITHUB_WORKSPACE}/output/worldcup_score_odds.html" worldcup_score_odds.html
+          git add worldcup_score_odds.html
+          git commit -m "自动发布网页 [$(TZ='Asia/Shanghai' date +'%Y-%m-%d %H:%M')]"
+          git push origin gh-pages-temp:gh-pages --force
+          echo "网页已发布到 gh-pages 分支"

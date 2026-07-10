@@ -5,3 +5,5 @@ __pycache__/
 .workbuddy/
 *.swp
 *.swo
+setup_github.ps1
+setup_github.py
