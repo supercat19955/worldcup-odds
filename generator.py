@@ -1466,10 +1466,6 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
                 <span class="status-label"><span class="status-dot"></span> 智能预测持续中</span>
                 <span class="deadline-info">最近投注截止: <span class="deadline-countdown-live" id="liveDeadline">--</span></span>
             </div>
-            <div class="status-right">
-                <span class="auto-refresh-info">自动刷新 <span class="next-refresh" id="nextRefresh">5:00</span></span>
-                <button class="refresh-btn" onclick="renderPredictions()">立即刷新</button>
-            </div>
         </div>
         <div class="predict-search">
             <input type="text" id="predictInput" placeholder="搜索比赛（如 西班牙、阿根廷）或直接点「预测」查看全部..." onkeyup="handleSearch(event)">
@@ -1508,10 +1504,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
 
     <script>
     var PREDICT_DATA = JSON.parse(document.getElementById('predictData').textContent);
-    var REFRESH_INTERVAL = 5 * 60; // 5分钟自动刷新预测
     var countdownTimer = null;
-    var refreshTimer = null;
-    var refreshSecondsLeft = REFRESH_INTERVAL;
 
     // ========== 多维度综合评分引擎 ==========
     function predictScore(match) {{
@@ -1670,12 +1663,6 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
         if (remainSec <= 0) {{
             el.textContent = '已截止';
             el.className = 'deadline-countdown-live expired';
-            // 所有比赛都截止了，停止刷新
-            if (refreshTimer) {{
-                clearInterval(refreshTimer);
-                refreshTimer = null;
-                document.getElementById('nextRefresh').textContent = '已停止';
-            }}
             return;
         }}
         var days = Math.floor(remainSec / 86400);
@@ -1688,20 +1675,6 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
         else str = mins + '分' + secs + '秒';
         el.textContent = str;
         el.className = 'deadline-countdown-live' + (remainSec < 3600 ? ' urgent' : '');
-    }}
-
-    // ========== 自动刷新倒计时 ==========
-    function updateRefreshCountdown() {{
-        var el = document.getElementById('nextRefresh');
-        if (!el) return;
-        if (refreshSecondsLeft <= 0) {{
-            refreshSecondsLeft = REFRESH_INTERVAL;
-            renderPredictions();
-        }}
-        var mins = Math.floor(refreshSecondsLeft / 60);
-        var secs = refreshSecondsLeft % 60;
-        el.textContent = mins + ':' + (secs < 10 ? '0' : '') + secs;
-        refreshSecondsLeft--;
     }}
 
     // ========== 卡片渲染 ==========
@@ -1877,8 +1850,6 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
         }}
 
         container.innerHTML = html;
-        // 重置自动刷新倒计时
-        refreshSecondsLeft = REFRESH_INTERVAL;
     }}
 
     function handleSearch(e) {{
@@ -1887,7 +1858,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
 
     // ========== 定时器管理 ==========
     function startTimers() {{
-        // 实时倒计时每秒更新
+        // 实时倒计时每秒更新（仅用于投注截止时间）
         if (countdownTimer) clearInterval(countdownTimer);
         countdownTimer = setInterval(function() {{
             updateLiveCountdown();
@@ -1895,13 +1866,6 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
             updateCardDeadlines();
         }}, 1000);
         updateLiveCountdown();
-
-        // 预测自动刷新每5分钟
-        if (refreshTimer) clearInterval(refreshTimer);
-        refreshTimer = setInterval(function() {{
-            updateRefreshCountdown();
-        }}, 1000);
-        refreshSecondsLeft = REFRESH_INTERVAL;
     }}
 
     function updateCardDeadlines() {{

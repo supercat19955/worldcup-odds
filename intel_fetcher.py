@@ -177,19 +177,25 @@ def get_betting_deadline(match_date, match_time):
 
     Args:
         match_date: "2026-07-10" 格式
-        match_time: "15:00" 格式
+        match_time: "15:00" 或 "15:00:00" 格式
 
     Returns:
-        str: 截止时间 "2026-07-10 14:55:00"
+        str: 截止时间 "2026-07-10 14:55"
     """
     if not match_date or not match_time:
         return ""
 
+    # 兼容 HH:MM 和 HH:MM:SS
+    time_str = match_time.strip()
+    fmt = "%Y-%m-%d %H:%M"
+    if len(time_str.split(":")) == 3:
+        fmt = "%Y-%m-%d %H:%M:%S"
+
     try:
-        dt = datetime.strptime(f"{match_date} {match_time}", "%Y-%m-%d %H:%M")
+        from datetime import timedelta
+        dt = datetime.strptime(f"{match_date} {time_str}", fmt)
         deadline = dt.replace(second=0)  # 整点
         # 竞彩通常开赛前5分钟左右截止
-        from datetime import timedelta
         deadline = deadline - timedelta(minutes=5)
         return deadline.strftime("%Y-%m-%d %H:%M")
     except ValueError:
