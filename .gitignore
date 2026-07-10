@@ -7,3 +7,4 @@ __pycache__/
 *.swo
 setup_github.ps1
 setup_github.py
+update_intel.py

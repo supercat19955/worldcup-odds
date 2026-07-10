@@ -14,7 +14,7 @@ import os
 from datetime import datetime
 
 from fetcher import fetch_world_cup_score_odds
-from analyzer import save_snapshot, load_best_previous_snapshot, load_all_snapshots, analyze_score_trends, get_significant_changes
+from analyzer import save_snapshot, load_best_previous_snapshot, load_all_snapshots, analyze_score_trends, get_significant_changes, load_latest_valid_snapshot
 from generator import generate_html, save_html
 from intel_fetcher import load_match_intel, get_all_match_keys, get_intel_age_hours, refresh_intel_on_odds_update
 
@@ -29,11 +29,19 @@ def run_once():
     data = fetch_world_cup_score_odds()
     if not data or not data.get("matches"):
         print("[警告] 未获取到世界杯比分赔率数据")
-        data = data or {
-            "fetch_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "fetch_timestamp": datetime.now().timestamp(),
-            "match_count": 0, "matches": [],
-        }
+        fallback = load_latest_valid_snapshot(min_matches=1)
+        if fallback:
+            data = fallback
+            data["fetch_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            data["fetch_timestamp"] = datetime.now().timestamp()
+            data["_fallback"] = True
+            print(f"[兜底] 已回退到历史快照，仍显示 {data.get('match_count', 0)} 场比赛")
+        else:
+            data = data or {
+                "fetch_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "fetch_timestamp": datetime.now().timestamp(),
+                "match_count": 0, "matches": [],
+            }
 
     # 2. 保存快照
     snapshot_file = save_snapshot(data)

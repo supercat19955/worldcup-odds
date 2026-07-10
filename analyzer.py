@@ -99,6 +99,32 @@ def load_all_snapshots():
     return snapshots
 
 
+def load_latest_valid_snapshot(min_matches=1):
+    """
+    加载最近一次包含有效比赛数据的快照
+
+    Args:
+        min_matches: 最少比赛数量，默认 1
+
+    Returns:
+        dict or None: 最近一次有效快照
+    """
+    files = _snapshot_files()
+    if not files:
+        return None
+    for fpath in reversed(files):
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if len(data.get("matches", [])) >= min_matches:
+                print(f"[兜底] 使用最近一次有效快照: {os.path.basename(fpath)} "
+                      f"({len(data['matches'])} 场比赛)")
+                return data
+        except Exception:
+            continue
+    return None
+
+
 def build_score_history(all_snapshots, match_id):
     """
     为指定比赛构建所有比分赔率的时间序列

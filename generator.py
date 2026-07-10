@@ -282,6 +282,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
     """生成完整的比分赔率 HTML 统计表（含多维度智能预测）"""
     fetch_time = data.get("fetch_time", "")
     match_count = data.get("match_count", 0)
+    is_fallback = data.get("_fallback", False)
 
     # 各比赛矩阵
     matrices = [build_score_matrix(r) for r in analyzed_results]
@@ -1435,7 +1436,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None)
     <div class="header">
         <h1>⚽ 2026 世界杯比分赔率统计表</h1>
         <div class="meta">
-            <span>📡 数据来源: m.sporttery.cn</span>
+            <span>📡 数据来源: m.sporttery.cn {'⚠️ [回退快照]' if is_fallback else ''}</span>
             <span>🕐 抓取时间: {fetch_time}</span>
             <span>📊 比赛数量: {match_count}</span>
         </div>
