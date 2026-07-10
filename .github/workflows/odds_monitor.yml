@@ -1,12 +1,12 @@
 name: World Cup Odds Monitor
 
 # 世界杯比分赔率云端监控 - 每30分钟自动运行
-# 外部定时服务 cron-job.org 触发 + GitHub schedule 双保险
+# GitHub 自带 schedule 触发（偏移分钟避开整点高峰）
 # 电脑关机后依然持续: 抓取赔率 → 刷新情报 → 分析 → 发布
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '7,37 * * * *'
   workflow_dispatch:
 
 permissions:
