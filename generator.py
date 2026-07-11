@@ -3,11 +3,27 @@
 比分赔率 HTML 统计表生成器
 为每场世界杯比赛生成比分赔率矩阵，包含趋势箭头
 """
+import datetime
 import os
 
 from analytics import generate_analytics_html
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+
+
+def to_iso_datetime(dt_str, tz_offset_hours=8):
+    """将本地时间字符串转换为带时区偏移的 ISO 8601 字符串，供 JS 可靠解析。"""
+    if not dt_str:
+        return dt_str
+    dt_str = str(dt_str).strip()
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            dt = datetime.datetime.strptime(dt_str, fmt)
+            sign = "+" if tz_offset_hours >= 0 else "-"
+            return dt.strftime("%Y-%m-%dT%H:%M:%S") + f"{sign}{abs(tz_offset_hours):02d}:00"
+        except ValueError:
+            continue
+    return dt_str
 
 
 def escape_attr(s):
@@ -402,7 +418,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
                 "overround": round(overround, 3),
             },
             "intel": {
-                "updated_at": intel.get("intel_updated_at", intel_meta.get("last_updated", "")),
+                "updated_at": to_iso_datetime(intel.get("intel_updated_at", intel_meta.get("last_updated", ""))),
                 "stage": intel.get("stage", ""),
                 "venue": intel.get("venue", ""),
                 "weather": intel.get("weather", ""),
@@ -422,7 +438,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
                 "ai_prediction": intel.get("ai_prediction", ""),
                 "ai_key_factors": intel.get("ai_key_factors", []),
                 "ai_recommendation": intel.get("ai_recommendation", ""),
-                "ai_enriched_at": intel.get("ai_enriched_at", ""),
+                "ai_enriched_at": to_iso_datetime(intel.get("ai_enriched_at", "")),
             },
             "ai": (ai_results or {}).get(match_key, {}),  # AI 大模型分析结果
         })
@@ -539,6 +555,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="300">
     <title>世界杯比分赔率统计表 - {fetch_time}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
@@ -1067,6 +1084,13 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
         .intel-freshness.expired {{
             color: #c62828;
             background: #ffebee;
+        }}
+        .intel-freshness .intel-exact {{
+            color: #666;
+            font-weight: 500;
+        }}
+        .intel-freshness .intel-age {{
+            font-weight: 700;
         }}
         .scoring-breakdown {{
             margin-top: 8px;
@@ -1659,7 +1683,7 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
     <div class="header">
         <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
             <h1 style="margin: 0;">⚽ 2026 世界杯比分赔率统计表</h1>
-            <button class="refresh-btn" id="refreshBtn" onclick="triggerRefresh()" title="手动触发云端数据刷新（赔率+情报+AI分析）">
+            <button class="refresh-btn" id="refreshBtn" onclick="triggerRefresh()" title="重新加载最新数据（由 WorkBuddy 自动化任务每小时更新）">
                 <span class="spinner"></span>
                 <span class="btn-text">🔄 刷新数据</span>
             </button>
@@ -1737,6 +1761,38 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
     <script>
     var PREDICT_DATA = JSON.parse(document.getElementById('predictData').textContent);
     var countdownTimer = null;
+    var intelTimer = null;
+
+    // 工具函数：转义 HTML 属性
+    function escapeAttr(s) {{
+        if (!s) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }}
+
+    // 工具函数：Date 格式化为本地可读时间
+    function formatDateTime(d) {{
+        var y = d.getFullYear();
+        var m = ('0' + (d.getMonth() + 1)).slice(-2);
+        var day = ('0' + d.getDate()).slice(-2);
+        var h = ('0' + d.getHours()).slice(-2);
+        var min = ('0' + d.getMinutes()).slice(-2);
+        return y + '-' + m + '-' + day + ' ' + h + ':' + min;
+    }}
+
+    // 工具函数：根据分钟数返回年龄文本 + 新鲜度样式
+    function computeAgeText(ageMin) {{
+        if (ageMin < 1) {{
+            return {{ text: '刚刚', cls: 'fresh' }};
+        }} else if (ageMin < 60) {{
+            return {{ text: ageMin + '分钟前', cls: 'fresh' }};
+        }} else if (ageMin < 180) {{
+            return {{ text: Math.floor(ageMin / 60) + '小时前', cls: 'fresh' }};
+        }} else if (ageMin < 360) {{
+            return {{ text: Math.floor(ageMin / 60) + '小时前', cls: 'stale' }};
+        }} else {{
+            return {{ text: Math.floor(ageMin / 60) + '小时前', cls: 'expired' }};
+        }}
+    }}
 
     // ========== 多维度综合评分引擎（7维）==========
     function predictScore(match) {{
@@ -2083,28 +2139,18 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
                     + '</div>';
             }}
 
-            // 情报新鲜度指示
+            // 情报新鲜度指示（ISO 8601 带时区，实时更新）
             var freshnessHtml = '';
             if (p && p.hasIntel) {{
                 var updatedAt = m.intel.updated_at || '';
                 if (updatedAt) {{
-                    var updatedDate = new Date(updatedAt.replace(/-/g, '/'));
+                    var updatedDate = new Date(updatedAt);
                     var ageMin = Math.floor((now - updatedDate) / 60000);
-                    var ageStr, freshnessCls;
-                    if (ageMin < 60) {{
-                        ageStr = ageMin + '分钟前';
-                        freshnessCls = 'fresh';
-                    }} else if (ageMin < 180) {{
-                        ageStr = Math.floor(ageMin / 60) + '小时前';
-                        freshnessCls = 'fresh';
-                    }} else if (ageMin < 360) {{
-                        ageStr = Math.floor(ageMin / 60) + '小时前';
-                        freshnessCls = 'stale';
-                    }} else {{
-                        ageStr = Math.floor(ageMin / 60) + '小时前';
-                        freshnessCls = 'expired';
-                    }}
-                    freshnessHtml = '<span class="intel-freshness ' + freshnessCls + '">📡 情报 ' + ageStr + ' (赔率更新即刷新)</span>';
+                    var ageInfo = computeAgeText(ageMin);
+                    freshnessHtml = '<span class="intel-freshness ' + ageInfo.cls + '" data-updated-at="' + escapeAttr(updatedAt) + '">'
+                        + '📡 情报 <span class="intel-age">' + ageInfo.text + '</span>'
+                        + ' · <span class="intel-exact">' + formatDateTime(updatedDate) + '</span> (赔率更新即刷新)'
+                        + '</span>';
                 }}
             }}
 
@@ -2171,7 +2217,9 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
                 var intelNote = '';
                 if (intel.updated_at) {{
                     var enrichedAt = intel.ai_enriched_at || intel.updated_at;
-                    intelNote = '<div style="font-size:10px;color:#aaa;margin-top:6px;">🔄 赔率联动更新 · 最近刷新: ' + enrichedAt + '</div>';
+                    var enrichedDate = new Date(enrichedAt);
+                    var enrichedStr = isNaN(enrichedDate.getTime()) ? enrichedAt : formatDateTime(enrichedDate);
+                    intelNote = '<div style="font-size:10px;color:#aaa;margin-top:6px;">🔄 赔率联动更新 · 最近刷新: ' + enrichedStr + '</div>';
                 }}
 
                 intelHtml = '<div class="intel-section">'
@@ -2233,6 +2281,31 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
             updateCardDeadlines();
         }}, 1000);
         updateLiveCountdown();
+
+        // 情报新鲜度每分钟更新一次
+        if (intelTimer) clearInterval(intelTimer);
+        intelTimer = setInterval(updateIntelFreshness, 60000);
+        updateIntelFreshness();
+    }}
+
+    // 实时更新所有情报新鲜度标签
+    function updateIntelFreshness() {{
+        var now = new Date();
+        var badges = document.querySelectorAll('.intel-freshness');
+        for (var i = 0; i < badges.length; i++) {{
+            var badge = badges[i];
+            var updatedAt = badge.getAttribute('data-updated-at');
+            if (!updatedAt) continue;
+            var updatedDate = new Date(updatedAt);
+            if (isNaN(updatedDate.getTime())) continue;
+            var ageMin = Math.floor((now - updatedDate) / 60000);
+            var ageInfo = computeAgeText(ageMin);
+            badge.className = 'intel-freshness ' + ageInfo.cls;
+            var ageEl = badge.querySelector('.intel-age');
+            var exactEl = badge.querySelector('.intel-exact');
+            if (ageEl) ageEl.textContent = ageInfo.text;
+            if (exactEl) exactEl.textContent = formatDateTime(updatedDate);
+        }}
     }}
 
     function updateCardDeadlines() {{
@@ -2264,6 +2337,18 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
     // 页面加载：渲染预测 + 启动定时器
     renderPredictions();
     startTimers();
+
+    // 本地模式初始化：更新UI提示
+    if (IS_LOCAL_MODE) {{
+        var statusBar = document.getElementById('predictStatusBar');
+        if (statusBar) {{
+            var modeHint = document.createElement('div');
+            modeHint.className = 'auto-refresh-info';
+            modeHint.innerHTML = '<span class="next-refresh" style="color:#f57c00;">🖥️ 本地模式 · 数据由 WorkBuddy 自动化每小时更新</span>';
+            statusBar.querySelector('.status-right')?.appendChild(modeHint)
+                || statusBar.appendChild(modeHint);
+        }}
+    }}
 
     // ========== AI 大模型分析渲染 ==========
     function renderAiAnalysis(m) {{
@@ -2362,13 +2447,19 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
     }});
 
     // ===== 手动刷新数据 =====
+    // 支持两种模式：
+    //   云端模式(GitHub Token已配置): 调用 GitHub Actions API 触发工作流
+    //   本地模式(Token未配置): 重新加载页面获取最新生成的数据（由 WorkBuddy 定时任务每小时更新）
     var GH_TOKEN = '__GH_PAT_PLACEHOLDER__';
     var GH_API = 'https://api.github.com/repos/supercat19955/worldcup-odds/actions/workflows/odds_monitor.yml/dispatches';
+    var IS_LOCAL_MODE = (GH_TOKEN.indexOf('PLACEHOLDER') >= 0);
     var REFRESH_COOLDOWN = 120000; // 2分钟冷却
     var lastRefreshTime = 0;
     var pollTimer = null;
     var pollCount = 0;
     var MAX_POLL = 20; // 最多轮询20次(约3.3分钟)
+    // 页面生成时间（从HTML标题栏提取）
+    var PAGE_GENERATED_AT = '{fetch_time}';
 
     function showToast(msg, type) {{
         type = type || 'info';
@@ -2390,13 +2481,26 @@ def generate_html(data, analyzed_results, significant_changes, match_intel=None,
     }}
 
     function triggerRefresh() {{
-        // 检测 Token 是否未配置
-        if (GH_TOKEN.indexOf('PLACEHOLDER') >= 0) {{
-            showToast('Token 尚未配置，请等待定时任务自动更新（每30分钟），或前往 GitHub Actions 手动触发', 'error');
+        var now = Date.now();
+
+        // ===== 本地模式：直接重新加载页面 =====
+        if (IS_LOCAL_MODE) {{
+            if (now - lastRefreshTime < REFRESH_COOLDOWN) {{
+                var remain = Math.ceil((REFRESH_COOLDOWN - (now - lastRefreshTime)) / 1000);
+                showToast('请等待 ' + remain + ' 秒后再刷新', 'error');
+                return;
+            }}
+            lastRefreshTime = now;
+            setBtnState('loading', '⏳ 刷新中...');
+            showToast('正在加载最新数据（页面生成时间: ' + PAGE_GENERATED_AT + '）...', 'info');
+            // 强制刷新，绕过缓存
+            setTimeout(function() {{
+                location.reload(true);
+            }}, 500);
             return;
         }}
 
-        var now = Date.now();
+        // ===== 云端模式：调用 GitHub Actions API =====
         if (now - lastRefreshTime < REFRESH_COOLDOWN) {{
             var remain = Math.ceil((REFRESH_COOLDOWN - (now - lastRefreshTime)) / 1000);
             showToast('请等待 ' + remain + ' 秒后再刷新（防止重复触发）', 'error');
